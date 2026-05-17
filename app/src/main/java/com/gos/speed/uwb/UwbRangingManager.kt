@@ -27,8 +27,6 @@ class UwbRangingManager(private val context: Context) {
             val uwbManager = UwbManager.createInstance(context)
             uwbManager.controllerSessionScope()
             UwbSupportStatus.SUPPORTED
-        } catch (e: UwbHardwareNotAvailableException) {
-            UwbSupportStatus.NOT_SUPPORTED
         } catch (e: Exception) {
             UwbSupportStatus.NOT_SUPPORTED
         }
@@ -61,9 +59,11 @@ class UwbRangingManager(private val context: Context) {
         val rangingParams = RangingParameters(
             uwbConfigType = RangingParameters.CONFIG_UNICAST_DS_TWR,
             sessionId = params.sessionId,
+            subSessionId = 0,
             sessionKeyInfo = params.sessionKey,
+            subSessionKeyInfo = null,
             complexChannel = scope.uwbComplexChannel,
-            peerDevices = listOf(UwbDevice.createForAddress(UwbAddress(peerAddress))),
+            peerDevices = listOf(UwbDevice.createForAddress(peerAddress)),
             updateRateType = RangingParameters.RANGING_UPDATE_RATE_AUTOMATIC
         )
         scope.prepareSession(rangingParams).collect { result ->
@@ -94,9 +94,11 @@ class UwbRangingManager(private val context: Context) {
         val rangingParams = RangingParameters(
             uwbConfigType = RangingParameters.CONFIG_UNICAST_DS_TWR,
             sessionId = sessionId,
+            subSessionId = 0,
             sessionKeyInfo = sessionKey,
+            subSessionKeyInfo = null,
             complexChannel = UwbComplexChannel(channel, preambleIndex),
-            peerDevices = listOf(UwbDevice.createForAddress(UwbAddress(hostAddress))),
+            peerDevices = listOf(UwbDevice.createForAddress(hostAddress)),
             updateRateType = RangingParameters.RANGING_UPDATE_RATE_AUTOMATIC
         )
         scope.prepareSession(rangingParams).collect { result ->
