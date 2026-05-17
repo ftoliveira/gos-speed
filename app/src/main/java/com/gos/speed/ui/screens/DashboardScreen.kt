@@ -22,7 +22,8 @@ import kotlin.math.abs
 @Composable
 fun DashboardScreen(
     viewModel: GpsViewModel,
-    onNavigateToHistory: () -> Unit
+    onNavigateToHistory: () -> Unit,
+    onNavigateToUwb: () -> Unit = {}
 ) {
     val locationPermission = rememberMultiplePermissionsState(
         listOf(
@@ -51,6 +52,9 @@ fun DashboardScreen(
                     )
                 },
                 actions = {
+                    IconButton(onClick = onNavigateToUwb) {
+                        Icon(Icons.Rounded.Radar, contentDescription = "Localização UWB")
+                    }
                     IconButton(onClick = onNavigateToHistory) {
                         Icon(Icons.Rounded.History, contentDescription = "Histórico")
                     }

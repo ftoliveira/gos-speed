@@ -15,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.gos.speed.ui.screens.DashboardScreen
 import com.gos.speed.ui.screens.HistoryScreen
+import com.gos.speed.ui.screens.UwbScreen
 import com.gos.speed.ui.theme.GosSpeedTheme
 import com.gos.speed.viewmodel.GpsViewModel
 
@@ -50,7 +51,8 @@ fun GosSpeedApp(viewModel: GpsViewModel) {
         composable("dashboard") {
             DashboardScreen(
                 viewModel = viewModel,
-                onNavigateToHistory = { navController.navigate("history") }
+                onNavigateToHistory = { navController.navigate("history") },
+                onNavigateToUwb = { navController.navigate("uwb") }
             )
         }
         composable("history") {
@@ -58,6 +60,9 @@ fun GosSpeedApp(viewModel: GpsViewModel) {
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
+        }
+        composable("uwb") {
+            UwbScreen(onNavigateBack = { navController.popBackStack() })
         }
     }
 }
