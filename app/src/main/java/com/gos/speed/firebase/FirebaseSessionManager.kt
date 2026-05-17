@@ -38,7 +38,7 @@ class FirebaseSessionManager {
                     trySend(Base64.decode(peerAddr, Base64.NO_WRAP))
                 }
             }
-            override fun onCancelled(error: DatabaseError) = close(error.toException())
+            override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         sessionRef.addValueEventListener(listener)
 
@@ -115,7 +115,7 @@ class FirebaseSessionManager {
                 val peerAddr = snapshot.child("peer_address").getValue(String::class.java)
                 if (peerAddr != null) trySend(Base64.decode(peerAddr, Base64.NO_WRAP))
             }
-            override fun onCancelled(error: DatabaseError) = close(error.toException())
+            override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         sessionRef.addValueEventListener(listener)
         awaitClose { sessionRef.removeEventListener(listener) }

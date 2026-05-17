@@ -116,10 +116,11 @@ fun UwbScreen(
             if (isIdle) {
 
                 // Resume card — shown when a previous session was saved
-                if (state.savedSession != null) {
+                val savedSession = state.savedSession
+                if (savedSession != null) {
                     item {
                         ResumeSessionCard(
-                            saved = state.savedSession,
+                            saved = savedSession,
                             onResume = { uwbViewModel.resumeSession() },
                             onEnd = { uwbViewModel.endSession() }
                         )
