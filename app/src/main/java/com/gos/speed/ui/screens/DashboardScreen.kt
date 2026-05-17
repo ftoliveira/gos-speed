@@ -18,7 +18,7 @@ import com.gos.speed.ui.components.SpeedometerGauge
 import com.gos.speed.viewmodel.GpsViewModel
 import kotlin.math.abs
 
-@OptIn(ExperimentalPermissionsApi::class)
+@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     viewModel: GpsViewModel,
