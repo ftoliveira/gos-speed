@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -50,6 +51,9 @@ dependencies {
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
     implementation("com.google.android.gms:play-services-location:21.1.0")
     implementation("androidx.core.uwb:uwb:1.0.0-alpha08")
+    val firebaseBom = platform("com.google.firebase:firebase-bom:32.7.4")
+    implementation(firebaseBom)
+    implementation("com.google.firebase:firebase-database-ktx")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
