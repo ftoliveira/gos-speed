@@ -1,5 +1,7 @@
 package com.gos.speed.data
 
+import com.gos.speed.session.SavedSession
+
 enum class UwbSupportStatus { CHECKING, SUPPORTED, NOT_SUPPORTED }
 enum class UwbRole { NONE, CONTROLLER, CONTROLEE }
 enum class UwbConnectionStatus { IDLE, ADVERTISING, SCANNING, CONNECTING, RANGING, DISCONNECTED, ERROR }
@@ -19,6 +21,7 @@ data class UwbScreenState(
     val connectionStatus: UwbConnectionStatus = UwbConnectionStatus.IDLE,
     val connectionMethod: ConnectionMethod = ConnectionMethod.FIREBASE,
     val sessionCode: String = "",
+    val savedSession: SavedSession? = null,
     val peer: UwbPeer? = null,
     val error: String? = null,
     val supportsAzimuth: Boolean = false

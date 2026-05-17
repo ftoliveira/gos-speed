@@ -50,6 +50,15 @@ class UwbRangingManager(private val context: Context) {
         }
     }
 
+    suspend fun getControleeLocalAddress(): ByteArray? {
+        return try {
+            val uwbManager = UwbManager.createInstance(context)
+            uwbManager.controleeSessionScope().localAddress.address
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun startControllerRanging(
         params: UwbControllerParams,
         peerAddress: ByteArray

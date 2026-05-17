@@ -7,8 +7,10 @@ import com.gos.speed.bluetooth.BleEvent
 import com.gos.speed.bluetooth.BleSessionManager
 import com.gos.speed.data.*
 import com.gos.speed.firebase.FirebaseSessionManager
-import com.gos.speed.uwb.UwbRangingManager
+import com.gos.speed.session.SavedSession
+import com.gos.speed.session.SessionPersistenceManager
 import com.gos.speed.uwb.UwbRangeResult
+import com.gos.speed.uwb.UwbRangingManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -17,6 +19,7 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
     private val uwbManager = UwbRangingManager(application)
     private val bleManager = BleSessionManager(application)
     private val firebaseManager = FirebaseSessionManager()
+    private val persistence = SessionPersistenceManager(application)
 
     private val _state = MutableStateFlow(UwbScreenState())
     val state: StateFlow<UwbScreenState> = _state.asStateFlow()
@@ -30,12 +33,113 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            _state.update { it.copy(supportStatus = uwbManager.checkSupport()) }
+            val support = uwbManager.checkSupport()
+            val saved = persistence.load()
+            _state.update { it.copy(supportStatus = support, savedSession = saved) }
         }
     }
 
     fun setConnectionMethod(method: ConnectionMethod) {
         _state.update { it.copy(connectionMethod = method) }
+    }
+
+    // ── Resume ────────────────────────────────────────────────────────────────
+
+    fun resumeSession() {
+        val saved = _state.value.savedSession ?: return
+        if (saved.role == UwbRole.CONTROLLER) resumeHost(saved) else resumeGuest(saved)
+    }
+
+    private fun resumeHost(saved: SavedSession) {
+        cancelAll()
+        _state.update { it.copy(
+            role = UwbRole.CONTROLLER,
+            connectionStatus = UwbConnectionStatus.CONNECTING,
+            connectionMethod = ConnectionMethod.FIREBASE,
+            sessionCode = saved.code,
+            error = null
+        )}
+        bleJob = viewModelScope.launch {
+            val params = uwbManager.createControllerParams()
+            if (params == null) {
+                _state.update { it.copy(error = "Falha ao obter endereço UWB", connectionStatus = UwbConnectionStatus.ERROR) }
+                return@launch
+            }
+            controllerParams = params
+
+            // Persist updated channel/preamble from new hardware session
+            persistence.save(saved.copy(channel = params.channel, preambleIndex = params.preambleIndex))
+
+            _state.update { it.copy(connectionStatus = UwbConnectionStatus.ADVERTISING) }
+
+            firebaseManager.resumeHostSession(
+                code = saved.code,
+                newAddress = params.localAddress,
+                channel = params.channel,
+                preambleIndex = params.preambleIndex,
+                sessionId = saved.sessionId,
+                sessionKey = saved.sessionKey
+            ).catch { e ->
+                _state.update { it.copy(error = e.message, connectionStatus = UwbConnectionStatus.ERROR) }
+            }.collect { peerAddress ->
+                _state.update { it.copy(connectionStatus = UwbConnectionStatus.RANGING) }
+                startRanging(isController = true, peerAddress = peerAddress)
+            }
+        }
+    }
+
+    private fun resumeGuest(saved: SavedSession) {
+        cancelAll()
+        _state.update { it.copy(
+            role = UwbRole.CONTROLEE,
+            connectionStatus = UwbConnectionStatus.CONNECTING,
+            connectionMethod = ConnectionMethod.FIREBASE,
+            sessionCode = saved.code,
+            error = null
+        )}
+        bleJob = viewModelScope.launch {
+            val myAddress = uwbManager.getControleeLocalAddress() ?: ByteArray(2)
+            val result = firebaseManager.resumeGuestSession(saved.code, myAddress)
+            result.fold(
+                onSuccess = { hostParams ->
+                    persistence.save(saved.copy(
+                        channel = hostParams.channel,
+                        preambleIndex = hostParams.preambleIndex,
+                        sessionId = hostParams.sessionId,
+                        sessionKey = hostParams.sessionKey
+                    ))
+                    _state.update { it.copy(connectionStatus = UwbConnectionStatus.RANGING) }
+                    startRanging(
+                        isController = false,
+                        hostAddress = hostParams.localAddress,
+                        channel = hostParams.channel,
+                        preambleIndex = hostParams.preambleIndex,
+                        sessionId = hostParams.sessionId,
+                        sessionKey = hostParams.sessionKey
+                    )
+                },
+                onFailure = { e ->
+                    _state.update { it.copy(error = e.message, connectionStatus = UwbConnectionStatus.ERROR) }
+                }
+            )
+        }
+    }
+
+    fun endSession() {
+        val code = _state.value.sessionCode.ifEmpty { _state.value.savedSession?.code ?: "" }
+        firebaseManager.cleanupSession(code)
+        persistence.clear()
+        cancelAll()
+        bleManager.stop()
+        _state.update { it.copy(
+            role = UwbRole.NONE,
+            connectionStatus = UwbConnectionStatus.IDLE,
+            sessionCode = "",
+            savedSession = null,
+            peer = null,
+            error = null
+        )}
+        _foundDevices.value = emptyList()
     }
 
     // ── Firebase ──────────────────────────────────────────────────────────────
@@ -50,7 +154,6 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
             sessionCode = code,
             error = null
         )}
-
         bleJob = viewModelScope.launch {
             val params = uwbManager.createControllerParams()
             if (params == null) {
@@ -62,7 +165,10 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
             firebaseManager.hostSession(code, params)
                 .catch { e -> _state.update { it.copy(error = e.message, connectionStatus = UwbConnectionStatus.ERROR) } }
                 .collect { peerAddress ->
-                    _state.update { it.copy(connectionStatus = UwbConnectionStatus.RANGING) }
+                    persistence.save(SavedSession(code, UwbRole.CONTROLLER, params.sessionId,
+                        params.sessionKey, params.channel, params.preambleIndex))
+                    _state.update { it.copy(connectionStatus = UwbConnectionStatus.RANGING,
+                        savedSession = persistence.load()) }
                     startRanging(isController = true, peerAddress = peerAddress)
                 }
         }
@@ -77,13 +183,15 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
             sessionCode = code,
             error = null
         )}
-
         bleJob = viewModelScope.launch {
-            val myAddress = uwbManager.createControllerParams()?.localAddress ?: ByteArray(2)
+            val myAddress = uwbManager.getControleeLocalAddress() ?: ByteArray(2)
             val result = firebaseManager.joinSession(code.uppercase().trim(), myAddress)
             result.fold(
                 onSuccess = { hostParams ->
-                    _state.update { it.copy(connectionStatus = UwbConnectionStatus.RANGING) }
+                    persistence.save(SavedSession(code, UwbRole.CONTROLEE, hostParams.sessionId,
+                        hostParams.sessionKey, hostParams.channel, hostParams.preambleIndex))
+                    _state.update { it.copy(connectionStatus = UwbConnectionStatus.RANGING,
+                        savedSession = persistence.load()) }
                     startRanging(
                         isController = false,
                         hostAddress = hostParams.localAddress,
@@ -111,7 +219,6 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
             sessionCode = "",
             error = null
         )}
-
         bleJob = viewModelScope.launch {
             val params = uwbManager.createControllerParams()
             if (params == null) {
@@ -119,7 +226,6 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             controllerParams = params
-
             bleManager.startHostMode(params.localAddress, params.channel, params.preambleIndex, params.sessionId, params.sessionKey)
                 .collect { event ->
                     when (event) {
@@ -145,7 +251,6 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
             sessionCode = "",
             error = null
         )}
-
         bleJob = viewModelScope.launch {
             bleManager.startGuestMode(ByteArray(2)).collect { event ->
                 when (event) {
@@ -164,9 +269,8 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
     fun connectToBlePeer(address: String) {
         bleJob?.cancel()
         _state.update { it.copy(connectionStatus = UwbConnectionStatus.CONNECTING, error = null) }
-
         bleJob = viewModelScope.launch {
-            val myAddress = uwbManager.createControllerParams()?.localAddress ?: ByteArray(2)
+            val myAddress = uwbManager.getControleeLocalAddress() ?: ByteArray(2)
             bleManager.connectToHost(address, myAddress).collect { event ->
                 when (event) {
                     is BleEvent.HostParamsReceived -> {
@@ -205,12 +309,9 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 uwbManager.startControleeRanging(hostAddress, channel, preambleIndex, sessionId, sessionKey)
             }
-
             flow.catch { e ->
                 _state.update { it.copy(error = e.message ?: "Ranging error", connectionStatus = UwbConnectionStatus.ERROR) }
-            }.collect { result ->
-                handleRangingResult(result)
-            }
+            }.collect { result -> handleRangingResult(result) }
         }
     }
 
@@ -231,13 +332,9 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    // ── Stop (keeps session saved for resume) ─────────────────────────────────
 
     fun stop() {
-        val code = _state.value.sessionCode
-        if (_state.value.connectionMethod == ConnectionMethod.FIREBASE && code.isNotEmpty()) {
-            firebaseManager.cleanupSession(code)
-        }
         cancelAll()
         bleManager.stop()
         _state.update { it.copy(
@@ -246,6 +343,7 @@ class UwbViewModel(application: Application) : AndroidViewModel(application) {
             sessionCode = "",
             peer = null,
             error = null
+            // savedSession intentionally kept for resume
         )}
         _foundDevices.value = emptyList()
     }

@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.accompanist.permissions.*
 import com.gos.speed.data.*
+import com.gos.speed.session.SavedSession
 import com.gos.speed.ui.components.GpsInfoCard
 import com.gos.speed.ui.components.RadarView
 import com.gos.speed.viewmodel.UwbViewModel
@@ -113,6 +114,17 @@ fun UwbScreen(
 
             // IDLE: method selector + role cards
             if (isIdle) {
+
+                // Resume card — shown when a previous session was saved
+                if (state.savedSession != null) {
+                    item {
+                        ResumeSessionCard(
+                            saved = state.savedSession,
+                            onResume = { uwbViewModel.resumeSession() },
+                            onEnd = { uwbViewModel.endSession() }
+                        )
+                    }
+                }
 
                 item {
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -318,6 +330,73 @@ fun UwbScreen(
                             Button(onClick = { uwbViewModel.stop() }) { Text("Voltar ao início") }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResumeSessionCard(
+    saved: SavedSession,
+    onResume: () -> Unit,
+    onEnd: () -> Unit
+) {
+    val roleLabel = if (saved.role == UwbRole.CONTROLLER) "Host" else "Convidado"
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Column(
+            Modifier.padding(20.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Rounded.History, null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(20.dp))
+                Text("Sessão anterior", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Code tiles
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    saved.code.forEach { char ->
+                        Surface(shape = MaterialTheme.shapes.extraSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(32.dp)) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(char.toString(), fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondary)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)
+                ) {
+                    Text(roleLabel, style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                }
+            }
+            Text(
+                "Os endereços UWB serão atualizados automaticamente.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.65f)
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onEnd, modifier = Modifier.weight(1f)) {
+                    Text("Encerrar")
+                }
+                Button(onClick = onResume, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Retomar")
                 }
             }
         }
